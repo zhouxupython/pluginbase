@@ -40,6 +40,25 @@ _internalspace.__path__ = []
 sys.modules[_internalspace.__name__] = _internalspace
 
 
+import inspect
+
+class Meta(type):
+    def __repr__(self):
+        # Inspiration: https://stackoverflow.com/a/6811020
+        callerframerecord = inspect.stack()[1]  # 0 represents this line
+        # 1 represents line at caller
+        frame = callerframerecord[0]
+        info = inspect.getframeinfo(frame)
+        # print(info.filename)  # __FILE__     -> Test.py
+        # print(info.function)  # __FUNCTION__ -> Main
+        # print(info.lineno)  # __LINE__     -> 13
+        # return str(info.filename + ': ' + info.function + '(' + str(info.lineno) + ') > ')
+        return str((info.filename[::-1])[0:info.filename[::-1].index(os.sep)][::-1] + ': ' + info.function + '(' + str(info.lineno) + ') > ')
+
+class __LINE__(metaclass=Meta):
+    pass
+
+
 def get_plugin_source(module=None, stacklevel=None):
     """Returns the :class:`PluginSource` for the current module or the given
     module.  The module can be provided by name (in which case an import
@@ -94,6 +113,8 @@ def _discover_space(name, globals):
 def _shutdown_module(mod):
     members = list(mod.__dict__.items())
     for key, value in members:
+        print(__LINE__, 'key: ', key)
+        print(__LINE__, 'value: ', value)
         if key[:1] != '_':
             setattr(mod, key, None)
     for key, value in members:
@@ -138,6 +159,7 @@ class _PluginSourceModule(ModuleType):
 
 
 def _setup_base_package(module_name):
+    print(__LINE__, ' module_name: ', module_name)
     try:
         mod = __import__(module_name, None, None, ['__name__'])
     except ImportError:
@@ -145,14 +167,20 @@ def _setup_base_package(module_name):
         if '.' in module_name:
             parent_mod = __import__(module_name.rsplit('.', 1)[0],
                                     None, None, ['__name__'])
+            print(__LINE__, ' parent_mod: ', parent_mod)
         else:
             parent_mod = None
-
+            print(__LINE__, ' parent_mod: ', parent_mod)
+            
+    print(__LINE__, ' mod: ', mod)
+    
     if mod is None:
         mod = _IntentionallyEmptyModule(module_name)
+        print(__LINE__, ' mod: ', mod)
         if parent_mod is not None:
             setattr(parent_mod, module_name.rsplit('.', 1)[-1], mod)
         sys.modules[module_name] = mod
+        print(__LINE__, ' parent_mod: ', parent_mod)
 
 
 class PluginBase(object):
@@ -244,6 +272,7 @@ class PluginSource(object):
         setattr(_internalspace, self.spaceid, self.mod)
 
     def __del__(self):
+        print(__LINE__, ' __del__: ')
         if not self.persist:
             self.cleanup()
 
@@ -254,7 +283,10 @@ class PluginSource(object):
         :meth:`load_plugin`.
         """
         rv = []
+        print("__path__ ", self.mod.__path__)
+        print("__name__ ", self.mod.__name__)
         for _, modname, ispkg in pkgutil.iter_modules(self.mod.__path__):
+            print(" i, name, ispkg: ", _, modname, ispkg)
             rv.append(modname)
         return sorted(rv)
 
@@ -310,19 +342,25 @@ class PluginSource(object):
         if self.mod is None or self.mod.__name__ is None:
             return
         modname = self.mod.__name__
+        print(__LINE__, 'self.mod: ', self.mod)
+        print(__LINE__, 'modname: ', modname)
         self.mod.__pluginbase_state__ = None
         self.mod = None
         try:
+            print(__LINE__, 'self.spaceid: ', self.spaceid)
             delattr(_internalspace, self.spaceid)
         except AttributeError:
             pass
         prefix = modname + '.'
         # avoid the bug described in issue #6
         if modname in _sys.modules:
+            print(__LINE__, _sys.modules)
             del _sys.modules[modname]
         for key, value in list(_sys.modules.items()):
             if not key.startswith(prefix):
                 continue
+            print(__LINE__, 'key: ', key)
+            print(__LINE__, 'value: ', value)
             mod = _sys.modules.pop(key, None)
             if mod is None:
                 continue
@@ -333,13 +371,17 @@ class PluginSource(object):
             raise RuntimeError('The plugin source was already cleaned up.')
 
     def __enter__(self):
+        print(__LINE__, ' __enter__: ')
         self.__assert_not_cleaned_up()
         _local.__dict__.setdefault('space_stack', []).append(self)
         return self
 
     def __exit__(self, exc_type, exc_value, tb):
+        print(__LINE__, ' __exit__: ')
         try:
+            print(__LINE__, ' __exit__: ', '_local.space_stack.pop() 1')
             _local.space_stack.pop()
+            print(__LINE__, ' __exit__: ', '_local.space_stack.pop() 2')
         except (AttributeError, IndexError):
             pass
 
@@ -411,10 +453,14 @@ class _ImportHook(ModuleType):
 
 
 try:
+    print(__LINE__, ' try: ')
     import __builtin__ as builtins
 except ImportError:
     import builtins
+    
+print(__LINE__, ' import_hook: ')
 import_hook = _ImportHook(__name__ + '.import_hook', builtins.__import__)
 builtins.__import__ = import_hook.plugin_import
 sys.modules[import_hook.__name__] = import_hook
 del builtins
+print(__LINE__, ' here: ')
